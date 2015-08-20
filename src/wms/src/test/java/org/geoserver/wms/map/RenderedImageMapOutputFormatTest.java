@@ -5,7 +5,8 @@
  */
 package org.geoserver.wms.map;
 
-import static org.geoserver.data.test.SystemTestData.STREAMS;
+import static org.geoserver.data.test.CiteTestData.STREAMS;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -14,6 +15,7 @@ import java.awt.Color;
 import java.awt.geom.NoninvertibleTransformException;
 import java.awt.image.BufferedImage;
 import java.awt.image.RenderedImage;
+import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -22,6 +24,7 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.imageio.ImageIO;
 import javax.media.jai.Interpolation;
 import javax.media.jai.RenderedOp;
 import javax.xml.namespace.QName;
@@ -33,6 +36,7 @@ import org.geoserver.catalog.LayerInfo;
 import org.geoserver.catalog.StyleInfo;
 import org.geoserver.data.test.MockData;
 import org.geoserver.data.test.SystemTestData;
+import org.geoserver.data.test.TestData;
 import org.geoserver.platform.ServiceException;
 import org.geoserver.security.decorators.DecoratingFeatureSource;
 import org.geoserver.wms.GetMapRequest;
@@ -284,48 +288,9 @@ public class RenderedImageMapOutputFormatTest extends WMSTestSupport {
         testData.addDefaultRasterLayer(MockData.TASMANIA_DEM, getCatalog());
     }
 
-    @Test 
-    public void testInterpolationBicubic() throws IOException, IllegalFilterException, Exception {
-        final Catalog catalog = getCatalog();
-        CoverageInfo coverageInfo = catalog.getCoverageByName(MockData.TASMANIA_DEM.getNamespaceURI(),
-                MockData.TASMANIA_DEM.getLocalPart());
-        
-        Envelope env = coverageInfo.boundingBox();
-        double shift = env.getWidth() / 6;
-
-        env = new Envelope(env.getMinX() - shift, env.getMaxX() + shift, env.getMinY() - shift,
-                env.getMaxY() + shift);
-
-        GetMapRequest request = new GetMapRequest();
-        final WMSMapContent map = new WMSMapContent();
-        int w = 400;
-        int h = (int) Math.round((env.getHeight() * w) / env.getWidth());
-        map.setMapWidth(w);
-        map.setMapHeight(h);
-        map.setBgColor(BG_COLOR);
-        map.setTransparent(true);
-        map.setRequest(request);
-        addRasterToMap(map, MockData.TASMANIA_DEM);
-        
-        map.getViewport().setBounds(new ReferencedEnvelope(env, DefaultGeographicCRS.WGS84));
-        request.setInterpolations(Arrays.asList(Interpolation
-                .getInstance(Interpolation.INTERP_BICUBIC)));
-        request.setFormat(getMapFormat());
-        RenderedImageMap imageMap = this.rasterMapProducer.produceMap(map);
-        RenderedOp op = (RenderedOp)imageMap.getImage();
-        BufferedImage image = op.getAsBufferedImage();
-        imageMap.dispose();
-        assertNotBlank("testInterpolation", image);
-        
-        // bicubic creates shades of gray instead of white
-        assertTrue(getPixelColor(image, 200, 200).getRGB() < Color.DARK_GRAY.getRGB());
-        assertPixelIsTransparent(image, 50 , 650);
-        assertTrue(getPixelColor(image, 200, 200).getRGB() < Color.WHITE.getRGB());
-        
-    }
     
     @Test 
-    public void testInterpolationNearest() throws IOException, IllegalFilterException, Exception {
+    public void testInterpolations() throws IOException, IllegalFilterException, Exception {
         final Catalog catalog = getCatalog();
         CoverageInfo coverageInfo = catalog.getCoverageByName(MockData.TASMANIA_DEM.getNamespaceURI(),
                 MockData.TASMANIA_DEM.getLocalPart());
@@ -337,7 +302,7 @@ public class RenderedImageMapOutputFormatTest extends WMSTestSupport {
                 env.getMaxY() + shift);
 
         GetMapRequest request = new GetMapRequest();
-        final WMSMapContent map = new WMSMapContent();
+        WMSMapContent map = new WMSMapContent();
         int w = 400;
         int h = (int) Math.round((env.getHeight() * w) / env.getWidth());
         map.setMapWidth(w);
@@ -353,13 +318,33 @@ public class RenderedImageMapOutputFormatTest extends WMSTestSupport {
         request.setFormat(getMapFormat());
         RenderedImageMap imageMap = this.rasterMapProducer.produceMap(map);
         RenderedOp op = (RenderedOp)imageMap.getImage();
-        BufferedImage image = op.getAsBufferedImage();
+        BufferedImage imageNearest = op.getAsBufferedImage();
         imageMap.dispose();
-        assertNotBlank("testInterpolation", image);
-        // nearest neighbor creates "almost black" / white images
-        assertTrue(getPixelColor(image, 200, 200).getRGB() < Color.DARK_GRAY.getRGB());
-        assertPixelIsTransparent(image, 50 , 650);
-        assertPixel(image, 100, 350, Color.WHITE);
+        assertNotBlank("testInterpolationsNearest", imageNearest);
+        
+        request = new GetMapRequest();
+        map = new WMSMapContent();
+        map.setMapWidth(w);
+        map.setMapHeight(h);
+        map.setBgColor(BG_COLOR);
+        map.setTransparent(true);
+        map.setRequest(request);
+        addRasterToMap(map, MockData.TASMANIA_DEM);
+        
+        map.getViewport().setBounds(new ReferencedEnvelope(env, DefaultGeographicCRS.WGS84));
+        request.setInterpolations(Arrays.asList(Interpolation
+                .getInstance(Interpolation.INTERP_BICUBIC)));
+        request.setFormat(getMapFormat());
+
+        imageMap = this.rasterMapProducer.produceMap(map);
+        op = (RenderedOp)imageMap.getImage();
+        BufferedImage imageBicubic = op.getAsBufferedImage();
+        imageMap.dispose();
+        assertNotBlank("testInterpolationsBicubic", imageBicubic);
+        // test some sample pixels to check rendering is different using different interpolations
+        assertFalse(getPixelColor(imageNearest, 200, 200).getRGB() == getPixelColor(imageBicubic, 200, 200).getRGB());
+        assertFalse(getPixelColor(imageNearest, 100, 100).getRGB() == getPixelColor(imageBicubic, 100, 100).getRGB());
+        assertFalse(getPixelColor(imageNearest, 300, 300).getRGB() == getPixelColor(imageBicubic, 300, 300).getRGB());
     }
 
     private void addRasterToMap(final WMSMapContent map, final QName typeName) throws IOException, FactoryRegistryException, TransformException, SchemaException {
