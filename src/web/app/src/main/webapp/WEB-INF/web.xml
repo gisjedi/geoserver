@@ -205,14 +205,8 @@
     
    	<filter-mapping>
 		<filter-name>TimeRequestFilter</filter-name>
-		<url-pattern>/ows/*</url-pattern>
+		<url-pattern>/*</url-pattern>
 	</filter-mapping>
-	
-	<filter-mapping>
-		<filter-name>TimeRequestFilter</filter-name>
-		<url-pattern>/wfs/*</url-pattern>
-	</filter-mapping>
-	
     
     <filter-mapping>
       <filter-name>Advanced Dispatch Filter</filter-name>
